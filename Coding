@@ -1,0 +1,95 @@
+---
+title: "PS531_Pre-Analysis Plan"
+author: "Azifah Astrina"
+date: "5/16/2022"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=TRUE}
+library(tidyverse)
+library(DeclareDesign)
+library(knitr)
+library(dplyr)
+
+setwd("~/Documents/walls")
+load("barrierstoentry.RData")
+bte <- x #rename dataset
+# Since I still do not have the data set of the identity composition,
+# so for this assignment I am using the existing data from Hassner and Wittenberg
+# (2015) of country pairs who built and did not build walls, including their
+# demographic, economy, and military capacity background.
+```
+
+```{r}
+# Table 1: Explanatory variables summary
+summary(bte$wall)
+summary(bte$nborders)
+summary(bte$bgdppc2000)
+summary(bte$bpop2000)
+summary(bte$walllength)
+```
+
+```{r}
+# Estimators performance: Table 2 and 3.
+pop <- declare_model(bte)
+pop.plan <- declare_population(bte)
+estimand <- declare_inquiry(diffprop=coef(lm_robust(wall~nborders))[[2]],
+                            label="diffprop")
+design <- pop + estimand + pop.plan
+est.1 <- declare_estimator(wall ~ nborders + bgdppc2000 + bpop2000 + walllength,
+                           model=lm_robust, se_type="classical", label="lmrob")
+est.2 <- declare_estimator(wall ~ nborders + bgdppc2000 + bpop2000 + walllength,
+                           model=glm, family=binomial, label="glm")
+des.est <- design +  est.1 + est.2
+str(des.est)
+diagnosis <- diagnose_design(des.est, bootstrap_sims = 0, sims= c(1,1,10,1,1))
+diagnosis
+
+# false positive rate
+diagnosands<- declare_diagnosands(
+        mean_estimand = mean(estimand,na.rm=TRUE),
+        mean_estimate = mean(estimate,na.rm=TRUE),
+        bias = mean(estimate - estimand,na.rm=TRUE),
+        sd_estimate = sqrt(var(estimate)),
+        rmse = sqrt(mean((estimate - estimand) ^ 2,na.rm=TRUE)),
+        false_positive_rate = mean(p.value <= .05 ,na.rm=TRUE),
+        coverage_of_ci = mean(estimand <= conf.high & estimand >= conf.low, na.rm=TRUE)
+    )
+diagnosis_design <- diagnose_design(des.est, bootstrap_sims = 0, sims=10,
+diagnosands=diagnosands)
+diagnosis_design
+
+# It looks like the bias of the est.2 is really high as well as the RMSE. While
+# both shows low statistical power, but compare to the other result, the est.1
+# shows a much lower and better result on bias and RMSE. So, in that case, I
+# would prefer using the first estimator.
+```
+
+```{r}
+# Table 4: regression model, mock analysis
+summary(bte$wall)
+wall.m <- lm(wall ~ nborders + bgdppc2000 + bpop2000 + walllength, data = bte)
+summary(wall.m)
+plot(wall.m)
+```
+
+```{r}
+# Additional: sensitivity analysis
+library(sensemakr)
+wall.sens <- sensemakr(model = wall.m, 
+                                treatment = "nborders",
+                                benchmark_covariates = "walllength",
+                                kd = 1:1)
+wall.sens # 
+summary(wall.sens) # the result shows that confounders that have strong
+# influence as the wall length would have R2: 0.27 and 0.15. As the robustness
+# value is high at 35%, which means the confounders do not have strong influence
+# on the point estimate.
+```
+
